@@ -1,2 +1,875 @@
 # graduate
-code
+#####桥木####
+#读取样地数据，计算丰度
+library(readxl)
+library(xlsx)
+library(tidyverse)
+library(Cairo)
+library(ggpubr)
+library(vegan)
+library(spaa)
+library("ggrepel", lib.loc="~/R/win-library/3.6")
+slope <- factor(c(rep("Eastern slope",19),rep('Western slope',13)),levels = c('West slope',"East slope"))
+
+tree <- read_excel("C:/Users/a2245/OneDrive/2020g/biye shuju/物种/样地/tree2.xlsx"
+                   ,sheet="3")
+#view(tree)
+tree_use <- tree[,c("样地名称及编码","拉丁名")]
+tree_richness <- tree_use %>% 
+  group_by(样地名称及编码,拉丁名) %>% 
+  summarize(num = n())
+#view(tree_richness)
+tree_richness_z <- tree_richness
+colnames(tree_richness_z) <- c('plots','species','abundance')
+#生成多样性矩阵
+library(spaa)
+tree_richness2 <- tree_richness[,c("样地名称及编码","拉丁名","num")]
+colnames(tree_richness2) <- c('plots','species','abundance')
+head(tree_richness2)
+tree_richness2$abundance <- as.integer(tree_richness2$abundance)
+tree_matrix <- data2mat(as.data.frame(tree_richness2))
+write.csv(tree_matrix,"D:/Desktop/tu/tree_matrix.csv")
+#计算richness
+library(vegan)
+T_S <- specnumber(tree_matrix)
+T_S <- as.data.frame(T_S,make.names = F)
+T_shannon <- diversity(tree_matrix)
+T_shannon <- as.data.frame(T_shannon,make.names =F)
+T_simp <- diversity(tree_matrix,index = "simpson")
+T_simp <- as.data.frame(T_simp,make.names =F)
+T_invsimp <- diversity(tree_matrix, "inv")
+T_invsimp <- as.data.frame(T_invsimp,make.names = F)
+T_unbias.simp <- rarefy(tree_matrix, 2) - 1
+T_unbias.simp <- as.data.frame(T_unbias.simp,make.names = F)
+T_alpha <- fisher.alpha(tree_matrix)
+T_alpha <- as.data.frame(T_alpha,make.names = F)
+#pairs(cbind(T_shannon, T_simp, T_invsimp, T_unbias.simp, T_alpha), pch="+", col="green")
+T_diver <- data.frame()
+T_diver <- T_S
+T_diver[,"T_shannon"] <- T_shannon$T_shannon
+T_diver[,"T_simp"] <- T_simp$T_simp
+T_diver[,'T_invsimp'] <- T_invsimp$T_invsimp
+T_diver[,"T_unbias.simp"] <- T_unbias.simp$T_unbias.simp
+T_diver[,'T_alpha'] <- T_alpha$T_alpha
+T_diver[,"T_Pielow"] <- T_shannon$T_shannon/log(T_S$T_S)
+T_diver[,"slope"] <- c(rep("Eastern slope",19),rep('Western slope',13))
+T_diver$slope <- factor(T_diver$slope,levels = c("Western slope","Eastern slope"))
+T_diver[,"plot"] <- rownames(tree_matrix)
+head(T_diver)
+T_div <- read_xlsx("C:/Users/a2245/OneDrive/2020g/biye shuju/物种/样地/tree2.xlsx"
+                ,sheet ="GMT-GPS")
+T_diversity <- data.frame()
+T_diversity <- full_join(T_div,T_diver,by = c("Name"="plot"))
+head(T_diversity)
+#T_E_slope <- subset(T_diversity,T_diversity$slope == "东坡")
+#T_W_slope <- subset(T_diversity,T_diversity$slope == "西坡")
+
+T_T_S <- ggplot(T_diversity,aes(Altitude,T_S,colour = slope,shape = slope))+
+  geom_point(size = 2.5)+
+  geom_smooth(se = F,method = "lm")+
+  labs(y ="Tree species richess",x = "Elevation(m)")+
+  theme_bw()+
+  theme(axis.title.x = element_blank(),axis.title = element_text(size = 10),legend.position = "none")
+
+T_T_shannon <- ggplot(T_diversity,aes(Altitude,T_shannon))+
+  geom_point()+geom_smooth(se = F,method = "lm")+facet_grid(~slope,scales = "free")+
+  theme_bw()+theme(axis.title.x = element_blank(),axis.title = element_text(size = 10))+
+  ylab("Tree Shannon & Wiener diversity")
+
+T_T_simp <- ggplot(T_diversity,aes(Altitude,T_simp))+
+  geom_point()+geom_smooth(se = F,method ="lm")+facet_grid(~slope,scales = "free")+
+  theme_bw()+theme(axis.title.x = element_blank(),axis.title = element_text(size = 10))+
+  ylab("Tree Simpson diversity")
+
+T_T_Pielow <- ggplot(T_diversity,aes(Altitude,T_Pielow))+
+  geom_point()+geom_smooth(se = F)+facet_grid(~slope,scales = "free")+ 
+  theme_bw()+theme(axis.title.x = element_blank(),axis.title = element_text(size = 10))+
+  ylab("Tree species eveness")
+#write.xlsx(T_diversity,"diversity1.xlsx",sheet = "Tree_diversity")
+#read.xlsx()
+
+#nmds
+library(vegan)
+Tree_nmds <- read.csv("D:/Desktop/tu/tree_matrix.csv",header = T,row.names = 1)
+T_nmds <- metaMDS(Tree_nmds)
+T_nmds_points <- data.frame(T_nmds$points)
+T_nmds_points[,'plot'] <- rownames(T_nmds_points)
+T_nmds_points[,'Altitude'] <- T_diversity$Altitude
+T_nmds_points[,'slope'] <- T_diversity$slope
+T_nmds_species <- T_nmds$species
+
+#write.csv(T_nmds_points,file = "T_nmds_plots.csv")
+#write.csv(T_nmds_species,file = "T_nmds_species.csv")
+Tree_nmds <- ggplot(T_nmds_points) + 
+  geom_polygon(aes(MDS1,MDS2,fill = slope),alpha=.3)+
+  geom_point(aes(MDS1,MDS2,colour = Altitude,shape =slope),size = 2.5)+
+  ylab("NMDS2")+xlab("NMDS1")+scale_color_gradient(low = "green",high = "red")+
+  theme_bw()+theme(axis.title = element_text(size = 10),axis.title.x = element_blank())+labs(colour = "Elevation(m)")
+#######TSH richness nmds组合##########
+three_arichness_nmds <- ggarrange(T_T_S,Tree_nmds,S_S_S,shurb_nmds,H_H_S,Herb_nmds,ncol = 2,nrow =3 ,widths = c(1,1.5),heights = c(1,1,1),common.legend = F)
+cairo_pdf("D:/Desktop/tu/threerichness_nmds.pdf",family="SimSun",width =8,height = 10.5)
+print(Tree_arichness_nmds)
+dev.off()
+
+
+##Tree_nmds <- ggplot(T_nmds_points) + geom_point(aes(MDS1,MDS2,colour = factor(Altitude)))+
+ # stat_ellipse(aes(MDS1,MDS2,group = slope),level = 0.95, show.legend = F)+
+ #  geom_text_repel(aes(MDS1,MDS2,label = Altitude),size = 3) +
+ # facet_grid(~slope,scales = "free") + theme_bw() + theme(legend.position = "none")
+
+
+
+
+#灌木
+#读取样地数据，计算丰度
+library(readxl)
+library(xlsx)
+library(tidyverse)
+shurb_all <- read_excel("C:/Users/a2245/OneDrive/2020g/biye shuju/物种/样地/shurb.xlsx"
+                   ,sheet="shurb可用")
+
+#分组计算总和
+shurb_3 <- shurb_all[,c('V12','拉丁名','株丛数')]
+colnames(shurb_3) <- c("plot",'specices',"abundance1")
+head(shurb_3)
+shurb1 <- group_by(shurb_3,plot,specices)
+#zongkeyoong
+shurb2 <- summarize(shurb1,abundance = sum(abundance1))
+#矩阵
+library(spaa)
+shurb <- shurb2[,c("plot",'specices','abundance')]
+shurb$abundance <- as.integer(shurb$abundance)
+shurb_matrix <- data2mat(as.data.frame(shurb))
+write.csv(shurb_matrix,"D:/Desktop/tu/shurb_matrix.csv")
+#计算richness
+library(vegan)
+S_S <- specnumber(shurb_matrix)
+S_S <- as.data.frame(S_S,make.names = F)
+S_shannon <- diversity(shurb_matrix)
+S_shannon <- as.data.frame(S_shannon,make.names =F)
+S_simp <- diversity(shurb_matrix,index = "simpson")
+S_simp <- as.data.frame(S_simp,make.names =F)
+S_invsimp <- diversity(shurb_matrix, "inv")
+S_invsimp <- as.data.frame(S_invsimp,make.names = F)
+S_unbias.simp <- rarefy(shurb_matrix, 2) - 1
+S_unbias.simp <- as.data.frame(S_unbias.simp,make.names = F)
+S_alpha <- fisher.alpha(shurb_matrix)
+S_alpha <- as.data.frame(S_alpha,make.names = F)
+#pairs(cbind(S_shannon, S_simp, S_invsimp, S_unbias.simp, S_alpha), pch="+", col="green")
+S_diver <- data.frame()
+S_diver <- S_S
+S_diver[,"S_shannon"] <- S_shannon$S_shannon
+S_diver[,"S_simp"] <- S_simp$S_simp
+S_diver[,'S_invsimp'] <- S_invsimp$S_invsimp
+S_diver[,"S_unbias.simp"] <- S_unbias.simp$S_unbias.simp
+S_diver[,'S_alpha'] <- S_alpha$S_alpha
+S_diver[,"S_Pielow"] <- S_shannon$S_shannon/log(S_S$S_S)
+S_diver[,"slope"] <- c(rep("Eastern slope",19),rep('Western slope',13))
+S_diver$slope <- factor(S_diver$slope,levels = c("Western slope","Eastern slope"))
+S_diver[,"plot"] <- rownames(tree_matrix)
+head(S_diver)
+S_div <- read_xlsx("C:/Users/a2245/OneDrive/2020g/biye shuju/物种/样地/tree2.xlsx"
+                 ,sheet ="GMT-GPS")
+S_diversity <- data.frame()
+S_diversity <- full_join(S_div,S_diver,by = c("Name"="plot"))
+head(S_diversity)
+#S_E_slope <- subset(diversity,diversity$slope == "东坡")
+#S_W_slope <- subset(diversity,diversity$slope == "西坡")
+S_S_S <- ggplot(S_diversity,aes(Altitude,S_S,shape = slope,colour = slope))+
+  geom_point(size = 2.5)+
+  labs(y = "Shurb species richness",x = "Elevation(m)")+
+  geom_smooth(se = F,span = 2)+
+  theme_bw()+theme(legend.position = "none",axis.title.x = element_blank(),strip.text.x = element_blank(),axis.title = element_text(size = 10))
+
+S_S_shannon <- ggplot(S_diversity,aes(Altitude,S_shannon))+geom_point()+
+  geom_smooth(se = F)+facet_grid(~slope,scales = "free")+
+  theme_bw()+theme(axis.title.x = element_blank(),strip.text.x = element_blank(),axis.title = element_text(size = 10))+
+  ylab("Shurb Shannon & Wiener diversity")
+
+S_S_simp <- ggplot(S_diversity,aes(Altitude,S_simp))+geom_point()+
+  geom_smooth(se = F)+facet_grid(~slope,scales = "free")+
+  theme_bw()+theme(axis.title.x = element_blank(),strip.text.x = element_blank(),axis.title = element_text(size = 10))+
+  ylab("Shurb Simpson diversity")
+
+S_S_Pielow <- ggplot(S_diversity,aes(Altitude,S_Pielow))+geom_point()+
+  geom_smooth(se = F)+facet_grid(~slope,scales = "free")+
+  theme_bw()+theme(axis.title.x = element_blank(),strip.text.x = element_blank(),axis.title = element_text(size = 10))+
+  ylab("Shurb species eveness")
+
+#write.xlsx(diver,"diversity1.xlsx",sheet = "shurb_diversity",append = T)
+
+#nmds
+library(vegan)
+shurb_nmds <- read.csv("D:/Desktop/tu/shurb_matrix.csv",header = T,row.names = 1)
+S_nmds <- metaMDS(shurb_nmds)
+S_nmds_points <- data.frame(S_nmds$points)
+S_nmds_points[,'slope'] <- S_diversity$slope
+S_nmds_points[,'Altitude'] <- S_diversity$Altitude
+S_nmds_species <- S_nmds$species
+shurb_nmds <- ggplot(S_nmds_points) + geom_point(aes(MDS1,MDS2,colour = factor(Altitude)))+
+  #stat_ellipse(aes(MDS1,MDS2,group = slope),level = 0.95, show.legend = F)+
+  geom_text_repel(aes(MDS1,MDS2,label = Altitude),size = 2) +facet_grid(~slope,scales = "free") + 
+  theme(legend.position = "none") + theme_bw()+ theme(legend.position = "none")+
+  ylab("NMDS2")+
+  theme(axis.title.x = element_blank(),axis.title = element_text(size = 10),strip.text.x = element_blank())
+#write.csv(S_nmds_points,file = "S_nmds_plots.csv")
+#write.csv(S_nmds_species,file = "S_nmds_species.csv")
+
+shurb_nmds <- ggplot(S_nmds_points) + 
+  geom_polygon(aes(MDS1,MDS2,fill = slope),alpha=.3)+
+  geom_point(aes(MDS1,MDS2,colour = Altitude,shape =slope),size = 2.5)+
+  ylab("NMDS2")+xlab("NMDS1")+scale_color_gradient(low = "green",high = "red")+
+  theme_bw()+theme(axis.title = element_text(size = 10),axis.title.x = element_blank())+labs(colour = "Elevation(m)")
+
+
+
+
+#草本
+library(readxl)
+library(xlsx)
+library(tidyverse)
+herb_all <- read_excel("C:/Users/a2245/OneDrive/2020g/biye shuju/物种/样地/herb.xlsx"
+                    ,sheet="herb可用")
+#分组汇总
+herb_3 <- herb_all[,c('plot','拉丁名','株数')]
+colnames(herb_3) <- c("plot",'specices',"abundance1")
+head(herb_3)
+herb1 <- group_by(herb_3,plot,specices)
+herb2 <- summarize(herb1,abundance = sum(abundance1))
+#矩阵
+library(spaa)
+herb <- herb2[,c('plot','specices','abundance')]
+herb$abundance <- as.integer(herb$abundance)
+herb_matrix <- data2mat(as.data.frame(herb))
+write.csv(herb_matrix,"D:/Desktop/tu/herb_matrix.csv")
+#计算richness
+library(vegan)
+H_S <- specnumber(herb_matrix)
+H_S <- as.data.frame(H_S,make.names = F)
+H_shannon <- diversity(herb_matrix)
+H_shannon <- as.data.frame(H_shannon,make.names =F)
+H_simp <- diversity(herb_matrix,index = "simpson")
+H_simp <- as.data.frame(H_simp,make.names =F)
+H_invsimp <- diversity(herb_matrix, "inv")
+H_invsimp <- as.data.frame(H_invsimp,make.names = F)
+H_unbias.simp <- rarefy(herb_matrix, 2) - 1
+H_unbias.simp <- as.data.frame(H_unbias.simp,make.names = F)
+H_alpha <- fisher.alpha(herb_matrix)
+H_alpha <- as.data.frame(H_alpha,make.names = F)
+#pairs(cbind(H_shannon, H_simp, H_invsimp, H_unbias.simp, H_alpha), pch="+", col="green")
+H_diver <- data.frame()
+H_diver <- H_S
+H_diver[,"H_shannon"] <- H_shannon$H_shannon
+H_diver[,"H_simp"] <- H_simp$H_simp
+H_diver[,'H_invsimp'] <- H_invsimp$H_invsimp
+H_diver[,"H_unbias.simp"] <- H_unbias.simp$H_unbias.simp
+H_diver[,'H_alpha'] <- H_alpha$H_alpha
+H_diver[,"H_Pielow"] <- H_shannon$H_shannon/log(H_S$H_S)
+H_diver[,"slope"] <- c(rep("Eastern slope",19),rep('Western slope',13))
+H_diver$slope <- factor(H_diver$slope,levels = c("Western slope","Eastern slope"))
+H_diver[,"plot"] <- rownames(tree_matrix)  
+
+head(S_diver)
+H_div <- read_xlsx("C:/Users/a2245/OneDrive/2020g/biye shuju/物种/样地/tree2.xlsx"
+                   ,sheet ="GMT-GPS")
+H_diversity <- data.frame()
+H_diversity <- full_join(H_div,H_diver,by = c("Name"="plot"))
+head(S_diversity)
+#H_E_slope <- subset(H_diversity,H_diversity$slope == "东坡")
+#H_W_slope <- subset(H_diversity,H_diversity$slope == "西坡")
+H_H_S <- ggplot(H_diversity,aes(Altitude,H_S,colour = slope,shape = slope))+
+  geom_point(size = 2.5)+
+  geom_smooth(se = F,span = 2)+
+  labs(y ="Hree species richess",x = "Elevation(m)")+
+  theme_bw()+
+  theme(axis.title = element_text(size = 10),legend.position = "none")
+
+H_H_shannon <- ggplot(H_diversity,aes(Altitude,H_shannon))+geom_point()+
+  geom_smooth(se = F)+facet_grid(~slope,scales = "free")+
+  theme_bw()+theme(strip.text.x = element_blank(),axis.title.x =element_text(size = 10) ,axis.title.y = element_text(size = 10))+
+  ylab("Herb Shannon & wiener diversity")+ xlab("Elevation (m)")
+
+H_H_simp <- ggplot(H_diversity,aes(Altitude,H_simp))+geom_point()+
+  geom_smooth(se = F)+facet_grid(~slope,scales = "free")+
+  theme_bw()+theme(strip.text.x = element_blank(),axis.title.x =element_text(size = 10) ,axis.title.y = element_text(size = 10))+
+  ylab("Herb Simpson diversity")+ xlab("Elevation (m)")
+
+H_H_Pielow <- ggplot(H_diversity,aes(Altitude,H_Pielow))+geom_point()+
+  geom_smooth(se = F)+facet_grid(~slope,scales = "free")+
+  theme_bw()+theme(strip.text.x = element_blank(),axis.title.x =element_text(size = 10) ,axis.title.y = element_text(size = 10))+
+  ylab("Herb species eveness")+ xlab("Elevation (m)")
+
+#write.xlsx(diver,"diversity1.xlsx",sheet = "shurb_diversity",append = T)
+#read.xlsx()
+
+
+#nmds
+library(vegan)
+herb_nmds <- read.csv("D:/Desktop/tu/herb_matrix.csv",header = T,row.names = 1)
+H_nmds <- metaMDS(herb_nmds)
+H_nmds_points <- data.frame(H_nmds$points)
+H_nmds_points[,'slope'] <- H_diversity$slope
+H_nmds_points[,'Altitude'] <- H_diversity$Altitude
+H_nmds_specices <- H_nmds$species
+#write.csv(H_nmds_points,file = "H_nmds_plots.csv")
+#write.csv(H_nmds_specices,file = "H_nmds_species.csv")
+Herb_nmds <- ggplot(H_nmds_points) + geom_point(aes(MDS1,MDS2,colour = factor(Altitude)))+
+  #stat_ellipse(aes(MDS1,MDS2,group = slope),level = 0.95, show.legend = F)+
+  geom_text_repel(aes(MDS1,MDS2,label = Altitude),size = 2) +
+  facet_grid(~slope,scales = "free") + 
+  ylab("NMDS2")+xlab("NMDS1")+
+  theme_bw()+ theme(legend.position = "none",axis.title.x =element_text(size = 10) ,axis.title.y = element_text(size = 10),
+                    strip.text = element_blank())
+
+
+
+Herb_nmds <- ggplot(H_nmds_points) + 
+  geom_polygon(aes(MDS1,MDS2,fill = slope),alpha=.3)+
+  geom_point(aes(MDS1,MDS2,colour = Altitude,shape =slope),size = 2.5)+
+  ylab("NMDS2")+xlab("NMDS1")+scale_color_gradient(low = "green",high = "red")+
+  theme_bw()+theme(axis.title = element_text(size = 10))+labs(colour = "Elevation(m)")
+#出土
+#richness
+All_richiness <- ggarrange(T_T_S,S_S_S,H_H_S,ncol = 1,nrow = 3,widths = c(1,1),heights = c(1,1),common.legend = TRUE,legend = 'bottom')
+cairo_pdf("D:/Desktop/tu/All_richness.pdf",family="SimSun",width = 5,height = 7)
+print(All_richiness)
+dev.off()
+
+#shannon
+All_shannon <- ggarrange(T_T_shannon,S_S_shannon,H_H_shannon,ncol = 1,nrow =3 ,widths = c(1,1),heights = c(1,1),common.legend = TRUE,legend = 'bottom')
+cairo_pdf("D:/Desktop/tu/All_shannon.pdf",family="SimSun",width = 5,height = 7)
+print(All_shannon)
+dev.off()
+
+#simp
+All_simp <- ggarrange(T_T_simp,S_S_simp,H_H_simp,ncol = 1,nrow = 3,widths = c(1,1),heights = c(1,1),common.legend = TRUE,legend = 'bottom')
+cairo_pdf("D:/Desktop/tu/All_simp.pdf",family="SimSun",width = 5,height = 7)
+print(All_simp)
+dev.off()
+
+#pielow
+All_Pielow <- ggarrange(T_T_Pielow,S_S_Pielow,H_H_Pielow,ncol = 1,nrow =3 ,widths = c(1,1),heights = c(1,1),common.legend = TRUE,legend = 'bottom')
+cairo_pdf("D:/Desktop/tu/All_Pielow.pdf",family="SimSun",width = 5,height = 7)
+print(All_Pielow)
+dev.off()
+
+#nmds
+All_nmds <- ggarrange(Tree_nmds,shurb_nmds,Herb_nmds,ncol = 1,nrow =3 ,widths = c(1,1),heights = c(1,1))
+cairo_pdf("D:/Desktop/tu/All_nmds.pdf",family="SimSun",width = 5,height = 7)
+print(All_nmds)
+dev.off()
+
+#stress
+t_stress <- stressplot(T_nmds)
+s_stress <- stressplot(S_nmds)
+h_stress <- stressplot(H_nmds)
+
+#######zong ,tree_richness,shurb2,herb2#####
+colnames(tree_richness_z) <- colnames(shurb2)
+tree_richness_z <- as.data.frame(tree_richness_z)
+shurb2data <- as.data.frame(shurb2)
+herb2data <- as.data.frame(herb2)
+#write.xlsx(shurb2data,'all.xlsx',sheet = "herb")
+#write.xlsx(tree_richness_z,"all.xlsx",sheet = "tree",append = T)
+#write.xlsx(shurb2data,'all.xlsx',sheet = "shurb",append = T)
+all <- rbind(tree_richness_z,shurb2data,herb2data)
+all_data <- group_by(all,plot,specices) %>% summarize(abundance = sum(abundance))
+all_data1 <- all_data[,c('plot','specices','abundance')]
+all_data1$abundance <- as.integer(all_data1$abundance)
+all_data_matrix <- data2mat(as.data.frame(all_data1))
+write.csv(all_data_matrix,"D:/Desktop/tu/all_matrix.csv")
+A_S <- specnumber(all_data_matrix)
+A_S <- as.data.frame(A_S)
+A_shannon <- diversity(all_data_matrix)
+A_shannon <- as.data.frame(A_shannon,make.names =F)
+A_simp <- diversity(all_data_matrix,index = "simpson")
+A_simp <- as.data.frame(A_simp,make.names =F)
+A_invsimp <- diversity(all_data_matrix, "inv")
+A_invsimp <- as.data.frame(A_invsimp,make.names = F)
+A_unbias.simp <- rarefy(all_data_matrix, 2) - 1
+A_unbias.simp <- as.data.frame(A_unbias.simp,make.names = F)
+A_alpha <- fisher.alpha(all_data_matrix)
+A_alpha <- as.data.frame(A_alpha,make.names = F)
+
+
+
+
+
+#pairs(cbind(H_shannon, H_simp, H_invsimp, H_unbias.simp, H_alpha), pch="+", col="green")
+A_diver <- data.frame()
+A_diver <- A_S
+A_diver[,"A_shannon"] <- A_shannon$A_shannon
+A_diver[,"A_simp"] <- A_simp$A_simp
+A_diver[,'A_invsimp'] <- A_invsimp$A_invsimp
+A_diver[,"A_unbias.simp"] <- A_unbias.simp$A_unbias.simp
+A_diver[,'A_alpha'] <- A_alpha$H_alpha
+A_diver[,"A_Pielow"] <- A_shannon$A_shannon/log(A_S$A_S)
+A_diver[,"slope"] <- c(rep("Eastern slope",19),rep('Western slope',13))
+A_diver$slope <- factor(A_diver$slope,levels = c("Western slope","Eastern slope"))
+A_diver[,'plot'] <- rownames(A_S)
+A_diver[,'Alitutude'] <- H_div$Altitude 
+
+A_A_A <- ggplot(A_diver,aes(Alitutude,A_S,colour = slope,shape = slope))+geom_point(size = 2.5)+
+  geom_smooth(method = "lm",se = F)+
+   theme_bw()+ xlab('Elevation (m)')+ylab("Species richness")+
+  theme(legend.position = "none",axis.title.x = element_text(size = 10),axis.title.y = element_text(size = 10))
+
+A_A_shannon <- ggplot(A_diver,aes(Alitutude,A_shannon))+geom_point()+
+  geom_smooth(se = F,span = 1)+
+  facet_grid(~slope,scales = "free") + theme_bw()+ xlab('Elevation (m)')+
+  ylab("Shannon-Weaver diversity")+
+  theme(axis.title.x = element_blank(),axis.title.y = element_text(size = 10))
+
+A_A_simp <- ggplot(A_diver,aes(Alitutude,A_simp))+geom_point()+
+  geom_smooth(se = F,span = 1)+
+  facet_grid(~slope,scales = "free") + theme_bw()+ xlab('Elevation (m)')+
+  ylab("Simpson diversity")+
+  theme(strip.text.x = element_blank(),axis.title.x = element_blank(),axis.title.y = element_text(size = 10))
+
+A_A_piel <- ggplot(A_diver,aes(Alitutude,A_Pielow))+geom_point()+
+  geom_smooth(se = F,span = 1)+
+  facet_grid(~slope,scales = "free") + theme_bw()+ xlab('Elevation (m)')+
+  ylab("Species eveness")+
+  theme(strip.text.x = element_blank(),axis.title.x = element_text(size = 10),axis.title.y = element_text(size = 10))
+
+cairo_pdf("D:/Desktop/tu/A_A_A.pdf",family="SimSun",width = 5,height = 3)
+print(A_A_A)
+dev.off()
+
+All_data <- ggarrange(A_A_shannon,A_A_simp,A_A_piel,ncol = 1,nrow =3 ,widths = c(1,1),heights = c(1,1),common.legend = TRUE,legend = 'bottom')
+cairo_pdf("D:/Desktop/tu/All_data.pdf",family="SimSun",width = 5,height = 7)
+print(All_data)
+dev.off()
+
+#######all NMDS######
+all_nmds <- read.csv("D:/Desktop/tu/all_matrix.csv",header = T,row.names = 1)
+A_nmds <- metaMDS(all_nmds)
+A_nmds_points <- data.frame(A_nmds$points)
+A_nmds_points[,'slope'] <- A_diver$slope
+A_nmds_points[,'Altitude'] <- A_diver$Alitutude
+A_nmds_specices <- A_nmds$species
+#write.csv(H_nmds_points,file = "H_nmds_plots.csv")
+#write.csv(H_nmds_specices,file = "H_nmds_species.csv")
+all_nmds1 <- ggplot(A_nmds_points) + geom_point(aes(MDS1,MDS2,colour = factor(Altitude)))+
+  #stat_ellipse(aes(MDS1,MDS2,group = slope),level = 0.95, show.legend = F)+
+  geom_text_repel(aes(MDS1,MDS2,label = Altitude),size = 2) +
+  facet_grid(~slope,scales = "free") + 
+  ylab("NMDS2")+xlab("NMDS1")+
+  theme_bw()+ theme(legend.position = "none",axis.title.y = element_text(size = 10),
+                    axis.title.x = element_text(size = 10))
+
+
+#######all sp rrichness nmds
+zuhe_nmds <- ggplot(A_nmds_points) + 
+  geom_polygon(aes(MDS1,MDS2,fill = slope),alpha=.3)+
+  geom_point(aes(MDS1,MDS2,colour = Altitude,shape =slope),size = 2.5)+
+  ylab("NMDS2")+xlab("NMDS1")+scale_color_gradient(low = "green",high = "red")+
+  theme_bw()+theme(axis.title = element_text(size = 10))+labs(colour = "Elevation(m)")
+
+zuhe_arichness_nmds <- ggarrange(A_A_A,zuhe_nmds,ncol = 2,nrow =1 ,widths = c(1,1.5),heights = c(1,1),common.legend = F)
+cairo_pdf("D:/Desktop/tu/zuhe_arichness_nmds.pdf",family="SimSun",width =8,height = 3.5)
+print(zuhe_arichness_nmds)
+dev.off()
+
+cairo_pdf("D:/Desktop/tu/All_nmds1.pdf",family="SimSun",width = 5,height = 3)
+print(all_nmds1)
+dev.off()
+
+stressplot(A_nmds)
+
+
+######物种累计曲线#####
+sample <- specaccum(all_data_matrix)
+Samples <- sample$sites
+Species <- sample$richness
+sd <- sample$sd
+sample_data <- data.frame(Samples,Species,sd)
+
+sample_species <- ggplot(sample_data,aes(Samples,Species)) + geom_point()+
+  geom_errorbar(aes(ymin = Species - sd,ymax =Species + sd ),width = 0)+
+  theme_bw()
+
+cairo_pdf("D:/Desktop/tu/物种累计曲线.pdf",family="SimSun",width = 5,height = 3)
+print(sample_species)
+dev.off()
+
+dim(tree_richness_z)
+dim(shurb2data)
+dim(herb2data)
+head(tree_richness_z)
+head(shurb2)
+head(herb2)
+
+
+
+#叶片属性
+library(readxl)
+library(xlsx)
+library(tidyverse)
+#求叶厚度，叶重量，叶面积平均值
+zongmean <- read_excel("C:/Users/a2245/OneDrive/2020g/biye shuju/叶片功能/zongmean.xlsx",sheet = "可用")
+options(digits = 3)
+leaf <- group_by(zongmean,plot)
+leaf_unique <- summarize(leaf,Leaf_thickness = mean(叶厚度,na.rm = T),
+                         Leaf_weight = mean(叶重量,na.rm = T),
+                         Leaf_area = mean(叶面积,na.rm = T))
+leaf_unique[,"slope"] <- c(rep("东坡",19),rep('西坡',13))
+leaf_unique[,'Alitutude'] <- H_div$Altitude
+#write.xlsx(leaf_unique,"leaf_unique.xlsx")
+#write.xlsx(youji,"leaf_unique.xlsx",sheet = "youji",append = T)
+yemianji <- ggplot(leaf_unique,aes(Alitutude,Leaf_area,group = slope)) + 
+  geom_point() + facet_grid(~slope,scales = "free")+ 
+  geom_smooth(method = "lm")+theme_bw()+theme(axis.text.x = element_text(angle = 90))
+
+yezhongliang <- ggplot(leaf_unique,aes(Alitutude,Leaf_weight,group = slope)) + 
+  geom_point() + facet_grid(~slope,scales = "free")+ geom_smooth(method = "lm")
+
+yehoudu <- ggplot(leaf_unique,aes(Alitutude,Leaf_thickness,group = slope)) + 
+  geom_point() + facet_grid(~slope,scales = "free")+ geom_smooth(method = "lm")
+#view(left_join(youji,leaf_unique,c(挂牌编号="zong$编号")))
+#colnames(leaf_unique)
+All_pro <- ggarrange(yemianji,yezhongliang,yehoudu,ncol = 1,nrow =3 ,widths = c(1,1),heights = c(1,1),common.legend = TRUE,legend = 'bottom')
+cairo_pdf("All_pro.pdf",family="SimSun",width = 5,height = 7)
+print(All_pro)
+dev.off()
+
+#diyi 匹配youji和性装
+zongmean2 <- zongmean
+colnames(zongmean2) <- c("plot","编号","叶厚度","叶重量","叶面积")
+leaf_2 <- group_by(zongmean2,plot,编号)
+leaf_unique_2 <- summarize(leaf_2,Leaf_thickness = mean(叶厚度,na.rm = T),
+                         Leaf_weight = mean(叶重量,na.rm = T),
+                         Leaf_area = mean(叶面积,na.rm = T))
+zong = left_join(youji,leaf_unique_2,c('挂牌编号'='编号'))
+write.xlsx(zong,"zong.xlsx",sheet = "微量元素—性状")
+write.xlsx(youji,"zong.xlsx",sheet = "微量元素",append = T)
+write.xlsx(leaf_unique_2,"zong.xlsx",sheet = "性状")
+write.csv(leaf_unique_2,"leaf_unique_2")
+
+
+youji <- read_excel("C:/Users/a2245/OneDrive/2020g/biye shuju/叶片功能/叶属性.xlsx",sheet = "Sheet2")
+colnames(youji) <- c( "plot","挂牌编号",'有机碳','全氮','全磷')
+leaf_youji <- group_by(youji,plot)
+leaf_youji_1 <- summarize(leaf_youji,LCC = mean(有机碳,na.rm = T),
+                          LNC = mean(全氮,na.rm = T),LPC = mean(全磷,na.rm = T))
+leaf_youji_1[,"slope"] <- c(rep("East slope",20),rep('West slope',13))
+leaf_youji_1$slope <- factor(leaf_youji_1$slope,levels = c('West slope','East slope'))
+leaf_youji_1[,'Alitutude'] <- c('1200',c(H_div$Altitude))
+leaf_youji_1 <- as.data.frame(leaf_youji_1)
+leaf_quantan <- ggplot(leaf_youji_1,aes(Alitutude,LCC,group = slope)) + 
+  geom_point() + facet_grid(~slope,scales = "free")+ geom_smooth(se = F,span = 1)+
+  theme_bw()+scale_x_discrete(guide = guide_axis(check.overlap = TRUE))+
+  theme(axis.title.x = element_blank(),axis.title.y = element_text(size = 10))
+
+leaf_quandan <- ggplot(leaf_youji_1,aes(Alitutude,LNC,group = slope)) + 
+  geom_point() + facet_grid(~slope,scales = "free")+ geom_smooth(se = F,span = 1)+
+  theme_bw()+scale_x_discrete(guide = guide_axis(check.overlap = TRUE))+
+  theme(axis.title.x = element_blank(),axis.title.y = element_text(size = 10),strip.text = element_blank())
+
+leaf_quanlin <- ggplot(leaf_youji_1,aes(Alitutude,LPC,group = slope,label=round(LPC, digits = 3))) + 
+  geom_point() + facet_grid(~slope,scales = "free")+ geom_smooth(se = F,span = 1)+xlab("Elevation (m)")+
+  theme_bw()+scale_x_discrete(guide = guide_axis(check.overlap = TRUE))+
+  theme(axis.title.x = element_text(size = 10),axis.title.y = element_text(size = 10),strip.text = element_blank())
+
+All_con <- ggarrange(leaf_quantan,leaf_quandan,ncol = 1,nrow =2,widths = c(1,1),heights = c(1,1))
+cairo_pdf("D:/Desktop/tu/All_con2.pdf",family="SimSun",width = 5,height = 5)
+print(All_con)
+dev.off()
+cairo_pdf("D:/Desktop/tu/All_con3.pdf",family="SimSun",width = 5,height = 2.5)
+print(leaf_quanlin)
+dev.off()
+
+
+#合并后绘图
+zongmean <- read_excel("D:/Desktop/tu/zong.xlsx",sheet = "Sheet3")
+options(digits = 3)
+leaf <- group_by(zongmean,plot)
+leaf_unique <- summarize(leaf,
+                         LCC = weighted.mean(LCC,abundance),
+                         LNC = weighted.mean(LNC,abundance),
+                         LPC = weighted.mean(LPC,abundance),
+                         Leaf_thickness = weighted.mean(Leaf_thickness,abundance),
+                         Leaf_SLA = weighted.mean(Leaf_area,abundance)/weighted.mean(Leaf_weight,abundance))
+leaf_unique[,"slope"] <- c(rep("Eastern slope",19),rep('Western slope',13))
+leaf_unique$slope <- factor(leaf_unique$slope,levels = c('Western slope','Eastern slope'))
+leaf_unique[,'Alitutude'] <- H_div$Altitude[c(1:29,30:32)]
+
+leaf1_SLA <- ggplot(leaf_unique,aes(Alitutude,Leaf_SLA,group = slope)) + 
+    geom_point() + facet_grid(~slope,scales = "free")+ geom_smooth(se = F,span = 1)+
+    xlab("Elevation (m)")+ylab("SLA")+theme_bw()+
+    theme(axis.title.y = element_text(size = 10),axis.title.x = element_blank())
+  
+
+yehoudu <- ggplot(leaf_unique,aes(Alitutude,Leaf_thickness,group = slope)) + 
+    geom_point() + facet_grid(~slope,scales = "free")+ geom_smooth(se = F,span = 1)+
+    xlab("Elevation (m)")+ylab("Leaf  thickness")+theme_bw()+
+    theme(axis.title.y = element_text(size = 10),strip.text = element_blank())
+
+leaf_quantan <- ggplot(leaf_unique,aes(Alitutude,LCC,group = slope)) + 
+  geom_point() + facet_grid(~slope,scales = "free")+ geom_smooth(se = F,span = 1)+
+  theme_bw()+
+  theme(axis.title.x = element_blank(),axis.title.y = element_text(size = 10))
+
+leaf_quandan <- ggplot(leaf_unique,aes(Alitutude,LNC,group = slope)) + 
+  geom_point() + facet_grid(~slope,scales = "free")+ geom_smooth(se = F,span = 1)+
+  theme_bw()+
+  theme(axis.title.x = element_blank(),axis.title.y = element_text(size = 10),strip.text = element_blank())
+
+leaf_quanlin <- ggplot(leaf_unique,aes(Alitutude,LPC,group = slope)) + 
+  geom_point() + facet_grid(~slope,scales = "free")+ geom_smooth(se = F,span = 1)+xlab("Elevation (m)")+
+  theme_bw()+
+  theme(axis.title.x = element_text(size = 10),axis.title.y = element_text(size = 10),strip.text = element_blank())
+
+
++scale_x_discrete(guide = guide_axis(check.overlap = TRUE))
+#write.xlsx(leaf_unique,"leaf_unique.xlsx")
+#write.xlsx(youji,"leaf_unique.xlsx",sheet = "youji",append = T)
+#yemianji <- ggplot(leaf_unique,aes(Alitutude,Leaf_area,group = slope)) + 
+#  geom_point() + facet_grid(~slope,scales = "free")+ xlab("Elevation (m)")+ylab("Leaf area")+
+#  geom_smooth(se = F,span = 1)+theme_bw()+theme(axis.title.x = element_blank(),axis.title.y= element_text(size = 10))
+#
+#yezhongliang <- ggplot(leaf_unique,aes(Alitutude,Leaf_weight,group = slope)) + 
+#  geom_point() + facet_grid(~slope,scales = "free")+ geom_smooth(se = F,span = 1)+
+#  xlab("Elevation (m)")+ylab("Leaf weight")+theme_bw()+
+#  theme(axis.title.x = element_blank(),axis.title.y = element_text(size = 10),strip.text = element_blank())
+
+#
+
+All_pro <- ggarrange(leaf1_SLA,yehoudu,ncol = 1,nrow =2,widths = c(1,1),heights = c(1,1),common.legend = TRUE,legend = 'bottom')
+cairo_pdf("D:/Desktop/tu/All_pro.pdf",family="SimSun",width = 5,height = 5.5)
+print(All_pro)
+dev.off()
+All_con <- ggarrange(leaf_quantan,leaf_quandan,leaf_quanlin,ncol = 1,nrow =3 ,widths = c(1,1),heights = c(1,1),common.legend = TRUE,legend = 'bottom')
+cairo_pdf("D:/Desktop/tu/All_con.pdf",family="SimSun",width = 5,height = 7.5)
+print(All_con)
+dev.off()
+
+
+#功能性状
+library(tidyverse)
+library(readxl)
+zong <- read_excel("D:/Desktop/tu/zong.xlsx", sheet = "Sheet3")
+trait <- group_by(zong,species) %>% summarise(LCC = weighted.mean(LCC,abundance),
+                                              LNC = weighted.mean(LNC,abundance),
+                                              LPC = weighted.mean(LPC,abundance),
+                                              Leaf_thickness = weighted.mean(Leaf_thickness,abundance),
+                                              Leaf_SLA = weighted.mean(Leaf_area/Leaf_weight,abundance))
+
+write.csv(trait,"D:/Desktop/tu/trait11.csv",row.names = F)
+trait11 <- read.csv("D:/Desktop/tu/trait11.csv",header = T,row.names = 1)
+
+tre1 <- read.csv("D:/Desktop/tu/tre.csv",header = T,row.names = 1)
+trait.dis <- as.matrix(dist(scale(trait11), method = "euclidean"))
+
+sesmpd.trait11 <- ses.mpd(tre1, trait.dis, null.model = "independentswap", 
+                              abundance.weighted = T, runs = 999)
+sesmnpd.trait11 <- ses.mntd(tre1, trait.dis, null.model = "independentswap", 
+                            abundance.weighted = T, runs = 999)
+Altitude <- H_div$Altitude
+S.E.S.PW <- -sesmpd.trait11$mpd.obs.z
+S.E.S.NN <- -sesmnpd.trait11$mntd.obs.z
+name <- H_div$Name
+slope <- factor(c(rep("Eastern slope",19),rep('Western slope',13)),levels = c('Western slope',"Eastern slope"))
+
+traN <- data.frame(name,Altitude,slope,S.E.S.PW,S.E.S.NN)
+
+sespwrichness <- ggplot(traN,aes(Altitude,S.E.S.PW,color = Altitude)) +
+  geom_point(size = 2)+ 
+  geom_hline(yintercept = 0,colour = "black",linetype = "dashed",size = 0.5)+
+  facet_grid(.~slope,scales = "free")+theme_bw()+
+  geom_smooth(se = F,span = 1)+
+  theme(legend.position = "none",axis.title.x = element_blank())+
+  labs(x = "Elevation (m)")
+
+sesnnrichness <- ggplot(traN,aes(Altitude,S.E.S.NN,color = Altitude)) +
+  geom_point(size = 2)+ 
+  geom_hline(yintercept = 0,colour = "black",linetype = "dashed",size = 0.5)+
+  facet_grid(.~slope,scales = "free")+theme_bw()+
+  geom_smooth(se = F,span = 1)+
+  theme(legend.position = "none",strip.text.x = element_blank())+
+  labs(x = "Elevation (m)")
+
+All_ses <- ggarrange(sespwrichness,sesnnrichness,ncol = 1,nrow =2 ,widths = c(1,1),heights = c(1,1),common.legend = F)
+cairo_pdf("D:/Desktop/tu/All_traitpw-swap_sla.pdf",family="SimSun",width = 5,height = 5.5)
+print(All_ses)
+dev.off()
+
+
+
+
+
+#####系统发育信号#####
+
+signal <- multiPhylosignal(trait11,multi2di(phy))
+write.csv(signal,"D:/Desktop/tu/phy_signal1.csv")
+
+
+
+plot(phy, direction = "right", show.tip.label = FALSE, 
+     show.node.label = TRUE, cex = 0.7)
+tiplabels(pch = 21, col = "red", 
+          cex = 3 * (trait11[, 'Leaf_thickness']/max(trait11[,"Leaf_thickness"])))
+
+tiplabels(pch = 19, col = "black", adj = 20,
+          cex = 3 * (trait11[, "Leaf_area"]/max(trait11[,"Leaf_area"])))
+
+
+
+#生成Phylomatic所需格式Calycanthaceae/Chimonanthus/Chimonanthus_salicifolius
+name <- read.delim("D:/Desktop/name.txt", header=FALSE)
+s <- c(name[,1])
+sp <- TPL(s)
+res <- taxa.table(sp)
+writeLines(res, "D:/Desktop/all_sp.txt")
+
+
+library(ape)
+tree <- read.nexus('D:/Desktop/PHY.nexus')
+tree_two <- multi2di(tree)
+phy <- chronoMPL(tree_two)
+write.tree(phy,"D:/Desktop/tree_PHY3.newick")
+
+x <- matrix(nrow = length(name),ncol = 15)
+colnames(x) <- colnames(cnplants_dat)
+x <- as.data.frame(x)
+#根据中文名提取拉
+for (i in 1:length(name)) {
+   a <- filter(cnplants_dat,SPECIES == name[i])
+   x[i,] <- a[1,]
+}
+
+########系统发育多样性
+library(ape)
+library(picante)
+library(ggplot2)
+library(spaa)
+library(readxl)
+phy <- read.tree("D:/Desktop/333.txt")
+herb.data <- data.frame(read_excel("D:/Desktop/tu/2.xlsx"))
+herb.data[,3] <- as.integer(herb.data[,3])
+tre <- data2mat(herb.data)
+write.csv(tre,"D:/Desktop/tu/tre.csv")
+md <- pd(tre,phy)
+md$MPD <- mpd(tre, cophenetic(phy))
+md$MNTD <- mntd(tre, cophenetic(phy))
+md$slope <- slope
+
+
+NRIrichness <- ses.mpd(tre,cophenetic(phy),runs=999,null.model="independentswap")
+md$NRIrichness <- -(NRIrichness[,6])
+md$NRIrichnessP <- NRIrichness[,7]
+
+NTIrichness <- ses.mntd(tre,cophenetic(phy),runs=999,null.model="independentswap")
+md$NTIrichness <- -(NTIrichness[,6])
+md$NTIrichnessP <- NTIrichness[,7]
+
+site <- read_xlsx("C:/Users/a2245/OneDrive/2020g/biye shuju/物种/样地/tree2.xlsx",sheet = "GMT-GPS")
+site$Name
+md$name <- rownames(md)
+ph_diversity <- data.frame()
+ph_diversity <- full_join(site,md,by = c("Name"="name"))
+ph_diversity[,"slope"] <- c(rep("Eastern slope",19),rep('Western slope',13))
+ph_diversity$slope <- factor(ph_diversity$slope,levels = c("Western slope","Eastern slope"))
+
+
+#######plot PD\MPD\MNTD######
+sr1 <- ggplot(ph_diversity,aes(SR,PD,group = slope,colour = slope)) + geom_point(size = 2) + 
+  geom_smooth(method = "lm",se = F,size=0.7)+
+  xlab("Speices richness")+ylab("Phylogenetic diversity")+theme_bw()+
+  theme(axis.title = element_text(size = 10))
+
+sr2 <- ggplot(ph_diversity,aes(Altitude,PD,shape = slope,colour = slope)) + geom_point(size = 2) + 
+  geom_smooth(method = "lm",se = F)+
+  guides(colour=guide_legend(title="slope"))+
+  xlab("Elevation (m)")+theme_bw()+
+  theme(axis.title.y = element_blank(),axis.title.x = element_text(size = 10))
+
+summary(lm(PD~SR,md))
+
+sp_PD2 <- ggarrange(sr1,sr2,ncol = 2,nrow =1 ,widths = c(1,1),heights = c(1,1),common.legend = T)
+cairo_pdf("D:/Desktop/tu/sp_PD2.pdf",family="SimSun",width = 5,height =2.5)
+print(sp_PD2)
+dev.off()
+
+cairo_pdf('D:/Desktop/tu/pd.pdf',family="SimSun",width = 6,height = 3.14)
+print(sr1)
+dev.off()
+
+
+
+#可以补充其他模型
+NRIrichness <- ggplot(ph_diversity,aes(Altitude,NRIrichness,color = Altitude)) +
+  geom_point(size = 2)+ 
+  geom_hline(yintercept = 0,colour = "black",linetype = "dashed",size = 0.5)+
+  facet_grid(.~slope,scales = "free")+theme_bw()+
+  geom_smooth(se = F,span = 1)+
+  theme(legend.position = "none",axis.title.x = element_blank())+
+  labs(x = "Elevation (m)",y = "NRI")
+
+
+#plot NTI
+
+NTIrichness2 <- ggplot(ph_diversity,aes(Altitude,NTIrichness,colour = Altitude)) +
+  geom_point(size = 2) + geom_hline(yintercept = 0,colour = "black",linetype = "dashed",size = 0.5)+
+  facet_grid(.~slope,scales = "free")+theme_bw()+
+  geom_smooth(se = F,span = 1)+
+  theme(legend.position = "none",strip.text.x = element_blank())+
+  labs(x = "Elevation (m)",y = "NTI")
+
+NTI_NRI <- ggarrange(NRIrichness,NTIrichness2,ncol = 1,nrow =2 ,widths = c(1,1),heights = c(1,1),common.legend = F)
+cairo_pdf("D:/Desktop/tu/NTI-NRI.pdf",family="SimSun",width = 5,height = 5.5)
+print(NTI_NRI)
+dev.off()
+
+
+
+
+#ggplot(mdw,aes(SR,NTIindependentswap,colour = Plot,shape = factor(Year))) +geom_point(size = 3) + geom_hline(yintercept = 0,colour = "red",size = 1)# + geom_smooth(aes(group = 1),method = "lm",se = F)
+#ggplot(mdw,aes(SR,NTItrialswap,colour = Plot,shape = factor(Year))) +geom_point(size = 3) + geom_hline(yintercept = 0,colour = "red",size = 1)# + geom_smooth(aes(group = 1),method = "lm",se = F)
+# cairo_pdf('NTInull.pdf',width = 3.14,height = 3.14)
+# print(NTInull)
+# dev.off()
+# cairo_pdf('NTIrichness.pdf',width = 3.14,height = 3.14)
+# print(NTIrichness)
+# dev.off()
+
+library(ggpubr)
+RT <- ggarrange(NRIrichness,NTIrichness2,ncol = 1,nrow = 2,widths = c(1,1),heights = c(1,1),common.legend = TRUE,legend = 'bottom')
+cairo_pdf("D:/Desktop/tu/NRINTI.pdf",width = 5,height = 7)
+print(RT)
+dev.off()
+
+
+
+
+
+library(readxl)
+library(FD)
+tr <- read.csv('D:/Desktop/tu/tre.csv',header = T,row.names = 1)
+FD <- dbFD(scale(trait11[colnames(tr),]),tr,corr = 'lingoes')
+nbsp <- as.data.frame(FD$nbsp)
+FDis <- as.data.frame(FD$FDis)
+RAO <- as.data.frame(FD$RaoQ)
+FD
+plotFD <- data.frame(nbsp,FDis,RAO,Altitude,slope)
+plotFD <- plotFD[-31,]
+plotFD <- plotFD[-23,]
+
+pairs(cbind( FD$RaoQ, FD$FDis), pch="+", col="green")
+plotFD_FD <- ggplot(plotFD,aes(FD.nbsp,FD.FDis,colour = slope, shape = slope))+
+             geom_point(size = 2)+geom_smooth(method = "lm",se = F,size  = 1)+theme_bw()+
+             labs(x = "Species richness",y = "Functional diversity(FD)")
+plotFD_FD2 <- ggplot(plotFD,aes(Altitude,FD.FDis,colour = slope, shape = slope))+
+  geom_point(size = 2)+geom_smooth(method = "lm",se = F,size  = 1)+theme_bw()+
+  labs(x = "Elevation (m)",y = "Functional diversity(FD)")+
+ theme(axis.title.y = element_blank())
+
+sp_FD2 <- ggarrange(plotFD_FD,plotFD_FD2,ncol = 2,nrow =1 ,widths = c(1,1),heights = c(1,1),common.legend = T)
+cairo_pdf("D:/Desktop/tu/sp_FD2.pdf",family="SimSun",width = 5,height =2.5)
+print(sp_FD2)
+dev.off()
+
+
+cairo_pdf('D:/Desktop/tu/plotFD.pdf',family="SimSun",width = 6,height = 4)
+print(plotFD_FD)
+dev.off()
