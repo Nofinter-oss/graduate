@@ -1,1 +1,24 @@
+#高黎贡山大样3D绘图
+library(plot3D)
+a <- read.csv('dian.csv',header = T,row.names = 1)
+ay <- read.csv("yzuobiao.csv",header = F,row.names = 1)
+plot <- read.table("dian2.txt",header = T)
+plott <- subset(plot,slo=="西坡")
+x <- plott$经度
+y <- plott$维度
+z <- plott$ele
+a <- as.matrix(a)
+#a <- a[seq(300,1),seq(257,1)]
+res <- persp3D(x=as.numeric(rownames(a)),y=ay$V2,z=a,expand = 1.2,zlim = c(-15000,3500),phi = 90,colkey = list(length = 0.2,width = 0.4,shift = 0.15,cex.axis = 0.8,cex.clab = 0.85),lighting = TRUE,lphi = 10,theta = -90)
+pmat <- res
+persp3D(x=as.numeric(rownames(a)),y=ay$V2,z=a,expand = 1.2,zlim = c(-15000,3500),phi = 70,colkey = list(length = 0.2,width = 0.4,shift = 0.15,cex.axis = 0.8,cex.clab = 0.85),lighting = TRUE,lphi = 5,theta = -70)
 
+image3D(x=as.numeric(rownames(a)),y=ay$V2,z=-15000,colvar = a,add = T,colkey = list(length = 0.2,width = 0.4,shift = -0.15,cex.axis = 0.8,cex.clab = 0.85) )
+contour3D(x=as.numeric(rownames(a)),y=ay$V2,z=-15000+0.001,colvar = a/30,add = T,plot = T,col = "black",drawlabels=TRUE)
+#res <- persp3D(x=as.numeric(rownames(a)),y=ay$V2,z=a,expand = 1,zlim = c(-5000,3500),phi = 35,colkey = list(length = 0.2,width = 0.4,shift = 0.15,cex.axis = 0.8,cex.clab = 0.85),lighting = TRUE,lphi = 0,theta = -70)
+points(trans3D(x,y,z,pmat = res),col = "blue",pch = 20,size = 1)#col = "magenta"
+points3D(x,y,z=z+300,col = "black",pch = 20,size =0.3,add = T)#col = "magenta"
+text(trans3D(x,y,z,pmat = res),labels = plott$plot,pos = 4,cex = 0.55,offset = 0.4)
+text(trans3D(x,y,z,pmat = res),labels = plott$plot,pos = 4,cex = 0.55,offset = 0.4)
+#points(trans3D(x,y,z=-15000+0.01,pmat = res),col = "black",pch = 20)
+#text(trans3D(x,y,-15000+0.01,pmat = res),labels = plott$plot,pos = 4,cex = 0.55,offset = 0.4)
